@@ -1,0 +1,11 @@
+python -m semantic_matching.run_glue \
+--do_train \
+--train_file data/train.csv \
+--validation_file data/dev.csv \
+--model_name_or_path bert-base-chinese \
+--max_seq_length 100 \
+--per_device_train_batch_size 8 \
+--learning_rate 1e-5 \
+--num_train_epochs 1 \
+--output_dir output \
+--delimiter "\t"
