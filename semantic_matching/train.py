@@ -1,4 +1,14 @@
 from semantic_matching.encoder import *
+from torch.utils.data import DataLoader
+from tqdm import tqdm, trange
+from tensorboardX import SummaryWriter
+from .dataset import BertDataset, SentencePairDataset
+import argparse
+import os.path
+from transformers import AdamW
+from transformers import get_linear_schedule_with_warmup
+import math
+import json
 
 
 def setup_argparser():
@@ -22,7 +32,7 @@ def setup_argparser():
     parser.add_argument("--batch_size", type=int, default=8, help="number of epochs")
     parser.add_argument("--epochs", type=int, default=10, help="number of epochs")
     parser.add_argument("--workers", type=int, default=1, help="number of dataloader workers")
-    parser.add_argument("--sim_func", type=str, default="dot", help="specify which similarity function to use")
+    parser.add_argument("--t", type=float, default=0.05, help="the temperature hyperparameter")
     parser.add_argument("--device", type=str, default="cpu", help="specify which device to use")
     parser.add_argument("--use_tb", action="store_true", help="wether to use tensorboard")
     return parser
@@ -37,13 +47,13 @@ def train():
         dataset = SentencePairDataset(args.data_file, args.min_tf, args.max_len, cache_path=cache_path)
         vocab_size = dataset.vocab_size
     if args.encoder == "siamese_cbow":
-        model = SiameseCbowEncoder(vocab_size, args.emb_dims, args.max_len, pooling=args.pooling, similarity_func=args.sim_func)
+        model = SiameseCbowEncoder(vocab_size, args.emb_dims, args.max_len, temperature=args.t, pooling=args.pooling)
     elif args.encoder == "multihead_attention":
-        model = MultiheadAttentionEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, pooling=args.pooling, similarity_func=args.sim_func)
+        model = MultiheadAttentionEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, temperature=args.t, pooling=args.pooling)
     elif args.encoder == "transformer":
-        model = TransformerEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, args.num_layers, pooling=args.pooling, similarity_func=args.sim_func)
+        model = TransformerEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, args.num_layers, temperature=args.t, pooling=args.pooling)
     else:
-        model = BertEncoder(args.bert_model, similarity_func=args.sim_func)
+        model = BertEncoder(args.bert_model, temperature=args.t)
         dataset = BertDataset(args.data_file, model.tokenizer, args.max_len)
 
     device = torch.device(args.device)
@@ -53,8 +63,7 @@ def train():
     data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
 
     if args.encoder != "bert":     
-        optimizer = Adam(model.parameters(), lr=args.lr)
-        scheduler = None
+        optimizer = AdamW(model.parameters(), lr=args.lr)
     else:
         no_decay = ['bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
@@ -62,9 +71,9 @@ def train():
             {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
         optimizer = AdamW(optimizer_grouped_parameters, lr=args.lr)
-        num_train_steps = math.ceil(len(dataset) * args.epochs / args.batch_size)
-        num_warmup_steps = int(args.warmup_proportion * num_train_steps)
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_train_steps)
+    num_train_steps = math.ceil(len(dataset) * args.epochs / args.batch_size)
+    num_warmup_steps = int(args.warmup_proportion * num_train_steps)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_train_steps)
 
     if args.use_tb:
         tb_writer = SummaryWriter()
@@ -105,7 +114,7 @@ def train():
         model.bert_model.save_pretrained(args.save_dir)
         model.tokenizer.save_pretrained(args.save_dir)
     with open(os.path.join(args.save_dir, "args.json"), "w") as fo:
-        args = {"encoder": args.encoder, "similarity_func": args.sim_func, 
+        args = {"encoder": args.encoder, "temperature": args.t, 
                 "max_length": args.max_len, "pooling": args.pooling}
         json.dump(args, fo)
 

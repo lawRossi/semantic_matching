@@ -1,49 +1,34 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-from torch.optim import Adam
-from tqdm import tqdm, trange
-from tensorboardX import SummaryWriter
-from .dataset import BertDataset, SentencePairDataset
-import argparse
-import os.path
 from transformers import AutoModel, AutoTokenizer
 from torch.nn.functional import normalize
-from transformers import AdamW
-from transformers import get_linear_schedule_with_warmup
-import math
-import json
 
 
 class SentenceEncoder(nn.Module):
-    def __init__(self, similarity_func="dot"):
+    def __init__(self, temperature=0.05):
         super().__init__()
-        self.similarity_func = similarity_func
+        self.temperature = temperature
         self.loss = nn.CrossEntropyLoss()
 
     def forward(self, sentences1, sentences2, labels=None):
         in_batch_negative = labels is None
         sent1_emb = self.enocde_sentences(sentences1)
-        if self.similarity_func == "cosine":
-            sent1_emb = normalize(sent1_emb, p=2, dim=1)
+        sent1_emb = normalize(sent1_emb, p=2, dim=1)
         if in_batch_negative:
             sent2_emb = self.enocde_sentences(sentences2)
-            if self.similarity_func == "cosine":
-                sent2_emb = normalize(sent2_emb, p=2, dim=1)
+            sent2_emb = normalize(sent2_emb, p=2, dim=1)
             logits = torch.mm(sent1_emb, sent2_emb.permute(1, 0))
             batch_size = logits.shape[0]
-            # labels = torch.eye(batch_size, dtype=torch.float, device=logits.device)
+            logits /= self.temperature
             labels = torch.arange(0, batch_size, device=logits.device)
         else:
             batch_size, num_sents, seq_len = sentences2.shape
             sentences2 = sentences2.view(-1, seq_len)
             sent2_emb = self.enocde_sentences(sentences2)
-            if self.similarity_func == "cosine":
-                sent2_emb = normalize(sent2_emb, p=2, dim=1)
+            sent2_emb = normalize(sent2_emb, p=2, dim=1)
             sent2_emb = sent2_emb.view(batch_size, num_sents, -1)
             sent1_emb = sent1_emb.unsqueeze(1)
             logits = torch.bmm(sent1_emb, sent2_emb.permute(0, 2, 1)).squeeze(1)
-        logits *= 20
         return self.loss(logits, labels)
 
     def enocde_sentences(self, sentences):
@@ -68,8 +53,9 @@ class AdditiveAttention(nn.Module):
 
 
 class SiameseCbowEncoder(SentenceEncoder):
-    def __init__(self, vocab_size, emb_dims, seq_len, embedding_weights=None, pooling="mean", similarity_func="dot", attention_hidden_dims=100):
-        super().__init__(similarity_func)
+    def __init__(self, vocab_size, emb_dims, seq_len, temperature=0.05, embedding_weights=None, 
+            pooling="mean", attention_hidden_dims=100):
+        super().__init__(temperature)
         if embedding_weights is None:
             self.embedding = nn.Embedding(vocab_size, emb_dims, padding_idx=0)
         else:
@@ -94,9 +80,9 @@ class SiameseCbowEncoder(SentenceEncoder):
 
 
 class MultiheadAttentionEncoder(SentenceEncoder):
-    def __init__(self, vocab_size, emb_dims, num_heads, seq_len, embedding_weights=None, pooling="mean", 
-            similarity_func="dot", attention_hidden_dims=100, dropout=0.2):
-        super().__init__(similarity_func)
+    def __init__(self, vocab_size, emb_dims, num_heads, seq_len, temperature=0.05, embedding_weights=None, 
+            pooling="mean", attention_hidden_dims=100, dropout=0.2):
+        super().__init__(temperature)
         self.emb_dims = emb_dims
         if embedding_weights is None:
             self.embedding = nn.Embedding(vocab_size, emb_dims, padding_idx=0)
@@ -127,9 +113,9 @@ class MultiheadAttentionEncoder(SentenceEncoder):
 
 
 class TransformerEncoder(SentenceEncoder):
-    def __init__(self, vocab_size, emb_dims, num_heads, seq_len, num_layers=1, embedding_weights=None, pooling="mean", 
-            similarity_func="dot", attention_hidden_dims=100, dropout=0.2):
-        super().__init__(similarity_func)
+    def __init__(self, vocab_size, emb_dims, num_heads, seq_len, num_layers=1, temperature=0.05, 
+            embedding_weights=None, pooling="mean", attention_hidden_dims=100, dropout=0.2):
+        super().__init__(temperature)
         self.emb_dims = emb_dims
         if embedding_weights is None:
             self.embedding = nn.Embedding(vocab_size, emb_dims, padding_idx=0)
@@ -159,8 +145,8 @@ class TransformerEncoder(SentenceEncoder):
 
 
 class BertEncoder(SentenceEncoder):
-    def __init__(self, model_name_or_path, similarity_func="dot"):
-        super().__init__(similarity_func)
+    def __init__(self, model_name_or_path, temperature=0.05):
+        super().__init__(temperature)
         self.bert_model = AutoModel.from_pretrained(model_name_or_path)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
@@ -168,23 +154,19 @@ class BertEncoder(SentenceEncoder):
         in_batch_negative = labels is None
         sent1_emb = self.enocde_sentences(sentences1)
         cse = sentences2 is None  # Contrastive learning
-        if self.similarity_func == "cosine" or cse:
-            sent1_emb = normalize(sent1_emb, p=2, dim=1)
+        sent1_emb = normalize(sent1_emb, p=2, dim=1)
         if in_batch_negative:
             if cse:
                 sentences2 = sentences1
             sent2_emb = self.enocde_sentences(sentences2)
-            if self.similarity_func == "cosine" or cse:
-                sent2_emb = normalize(sent2_emb, p=2, dim=1)
+            sent2_emb = normalize(sent2_emb, p=2, dim=1)
             logits = torch.mm(sent1_emb, sent2_emb.permute(1, 0))
-            if cse:
-                logits *= 20
+            logits /= self.temperature
             batch_size = logits.shape[0]
             labels = torch.eye(batch_size, dtype=torch.float, device=logits.device)
         else:
             sent2_emb = self.enocde_sentences(sentences2)
-            if self.similarity_func == "cosine":
-                sent2_emb = normalize(sent2_emb, p=2, dim=1)
+            sent2_emb = normalize(sent2_emb, p=2, dim=1)
             logits = torch.mul(sent1_emb, sent2_emb).sum(dim=1)
         return self.loss(logits, labels)
 
