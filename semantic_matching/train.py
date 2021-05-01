@@ -54,7 +54,8 @@ def train():
         model = TransformerEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, args.num_layers, temperature=args.t, pooling=args.pooling)
     else:
         model = BertEncoder(args.bert_model, temperature=args.t)
-        dataset = BertDataset(args.data_file, model.tokenizer, args.max_len)
+        cache_path = os.path.join(os.path.dirname(args.data_file), ".bert")
+        dataset = BertDataset(args.data_file, model.tokenizer, args.max_len, cache_path=cache_path)
 
     device = torch.device(args.device)
     model.to(device)

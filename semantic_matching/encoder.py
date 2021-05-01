@@ -163,7 +163,7 @@ class BertEncoder(SentenceEncoder):
             logits = torch.mm(sent1_emb, sent2_emb.permute(1, 0))
             logits /= self.temperature
             batch_size = logits.shape[0]
-            labels = torch.eye(batch_size, dtype=torch.float, device=logits.device)
+            labels = torch.arange(0, batch_size, device=logits.device)
         else:
             sent2_emb = self.enocde_sentences(sentences2)
             sent2_emb = normalize(sent2_emb, p=2, dim=1)

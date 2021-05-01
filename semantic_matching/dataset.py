@@ -118,24 +118,39 @@ class SentencePairDataset(torch.utils.data.Dataset):
 
 
 class BertDataset(torch.utils.data.Dataset):
-    def __init__(self, data_file, tokenizer, max_len=30) -> None:
+    def __init__(self, data_file, tokenizer, max_len=30, cache_path=".bert", rebuild_cache=False) -> None:
         super().__init__()
         self.data_file = data_file
         self.tokenizer = tokenizer
         self.max_len = max_len
-        self._load_data()
+
+        if rebuild_cache or not os.path.exists(cache_path):
+            shutil.rmtree(cache_path, ignore_errors=True)
+            self._build_cache(cache_path)
+        self.env = lmdb.open(cache_path, create=False, lock=False, readonly=True)
+        with self.env.begin(write=False) as txn:
+            self.length = txn.stat()["entries"]
 
     def __getitem__(self, index):
-        return self.data[index]
-    
-    def __len__(self):
-        return len(self.data)
+        with self.env.begin(write=False) as txn:
+            item = pickle.loads(txn.get(struct.pack(">I", index)))
+        return item
 
-    def _load_data(self):
-        self.data = []
+    def __len__(self):
+        return self.length
+    
+    def _build_cache(self, cache_path):
+        with lmdb.open(cache_path, map_size=int(1e11)) as env:
+            with env.begin(write=True) as txn:
+                for buffer in self._yield_buffer():
+                    for key, value in buffer:
+                        txn.put(key, value)
+
+    def _yield_buffer(self):
+        buffer = []
         with open(self.data_file, encoding="utf-8") as fi:
-            pbar = tqdm.tqdm(fi, "loading data")
-            for line in pbar:
+            pbar = tqdm.tqdm(fi, "building cache")
+            for i, line in enumerate(pbar):
                 splits = line.strip().split("\t")
                 if len(splits) == 3:
                     label, sent1, sent2 = splits
@@ -155,7 +170,11 @@ class BertDataset(torch.utils.data.Dataset):
                     output = self._tokenize(sent2)
                     output = {f"sent2_{k}": np.array(v, dtype=np.int64) for k, v in output.items()}
                     sample.update(output)
-                self.data.append(sample)
+                buffer.append((struct.pack(">I", i), pickle.dumps(sample)))
+                if len(buffer) == 1000:
+                    yield buffer
+                    buffer.clear()
+            yield buffer
 
     def _tokenize(self, sentence):
         return self.tokenizer(sentence, padding="max_length", max_length=self.max_len, truncation=True)
