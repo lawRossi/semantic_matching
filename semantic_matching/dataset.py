@@ -3,25 +3,39 @@ import torch
 import jieba
 import tqdm
 import numpy as np
+import lmdb
+import pickle
+import os
+import shutil
+import struct
 
 
 class SentencePairDataset(torch.utils.data.Dataset):
-    def __init__(self, data_file, min_tf=3, max_len=30, tokenize=None) -> None:
+    def __init__(self, data_file, min_tf=3, max_len=30, vocab=None, tokenize=None, cache_path=".sent_pair", rebuild_cache=False) -> None:
         super().__init__()
         self.data_file = data_file
         self.min_tf = min_tf
         self.max_len = max_len
+        self.vocab = vocab
         self.tokenize = tokenize
-        self._load_data()
-        self._tokenize_sentences()
-        self._build_vocabulary()
-        self._convert_data()
 
-    def __getitem__(self, i):
-        return self.data[i]
+        if rebuild_cache or not os.path.exists(cache_path):
+            shutil.rmtree(cache_path, ignore_errors=True)
+            self._build_cache(cache_path)
+        self.env = lmdb.open(cache_path, create=False, lock=False, readonly=True)
+        with self.env.begin(write=False) as txn:
+            self.length = txn.stat()["entries"] - 1  # account for word_dictionary
+            if self.vocab is None:
+                self.vocab = pickle.loads(txn.get(b"vocab"))
+            self.vocab_size = len(self.vocab) + 2 # account for padding and oov
+
+    def __getitem__(self, index):
+        with self.env.begin(write=False) as txn:
+            item = pickle.loads(txn.get(struct.pack(">I", index)))
+        return item
 
     def __len__(self):
-        return len(self.data)
+        return self.length
 
     def _load_data(self):
         self.data = []
@@ -68,8 +82,21 @@ class SentencePairDataset(torch.utils.data.Dataset):
         words = [word for word, count in counts.items() if count >= self.min_tf]
         self.vocab = {word: i+1 for i, word in enumerate(words)}  # 0 kept for padding
 
-    def _convert_data(self):
-        pbar = tqdm.trange(len(self.data), desc="converting data")
+    def _build_cache(self, cache_path):
+        self._load_data()
+        self._tokenize_sentences()
+        if self.vocab is None:
+            self._build_vocabulary()
+        with lmdb.open(cache_path, map_size=int(1e11)) as env:
+            with env.begin(write=True) as txn:
+                txn.put(b"vocab", pickle.dumps(self.vocab))
+                for buffer in self._yield_buffer():
+                    for key, value in buffer:
+                        txn.put(key, value)
+
+    def _yield_buffer(self):
+        pbar = tqdm.trange(len(self.data), desc="build cache")
+        buffer = []
         for i in pbar:
             item = self.data[i]
             tokens1 = item[0]
@@ -83,7 +110,11 @@ class SentencePairDataset(torch.utils.data.Dataset):
             else:
                 label = item[2]
                 new_item = (np.array(token_idxes1, dtype=np.int64), np.array(token_idxes2, dtyp=np.int64), label)
-            self.data[i] = new_item
+            buffer.append((struct.pack(">I", i), pickle.dumps(new_item)))
+            if len(buffer) % 1000 == 0:
+                yield buffer
+                buffer.clear()
+        yield buffer
 
 
 class BertDataset(torch.utils.data.Dataset):
