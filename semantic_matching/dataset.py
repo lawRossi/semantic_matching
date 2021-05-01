@@ -159,7 +159,8 @@ class BertDataset(torch.utils.data.Dataset):
                     label = None
                 elif len(splits) == 1:
                     sent1 = splits[0]
-                    sent2 = None 
+                    sent2 = None
+                    label = None
                 else:
                     raise RuntimeError("invalid file format")
                 sample = {} if label is None else {"label": int(label)}

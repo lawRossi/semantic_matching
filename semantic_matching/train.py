@@ -91,6 +91,7 @@ def train():
                 batch = {k: v.to(device) for k, v in batch.items()}
                 sentences1 = {k.replace("sent1_", ""): v for k, v in batch.items() if k.startswith("sent1_")}
                 sentences2 = {k.replace("sent2_", ""): v for k, v in batch.items() if k.startswith("sent2_")}
+                sentences2 = sentences2 or None
                 labels = batch.get("label")
                 batch = [sentences1, sentences2, labels]
             loss = model(*batch)
