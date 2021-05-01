@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 from tqdm import tqdm, trange
 from tensorboardX import SummaryWriter
-from .dataset import BertDataset, SentencePairDataset
+from dataset import BertDataset, SentencePairDataset
 import argparse
 import os.path
 from transformers import AutoModel, AutoTokenizer
@@ -19,7 +19,7 @@ class SentenceEncoder(nn.Module):
     def __init__(self, similarity_func="dot"):
         super().__init__()
         self.similarity_func = similarity_func
-        self.loss = nn.BCEWithLogitsLoss()
+        self.loss = nn.CrossEntropyLoss()
 
     def forward(self, sentences1, sentences2, labels=None):
         in_batch_negative = labels is None
@@ -32,7 +32,8 @@ class SentenceEncoder(nn.Module):
                 sent2_emb = normalize(sent2_emb, p=2, dim=1)
             logits = torch.mm(sent1_emb, sent2_emb.permute(1, 0))
             batch_size = logits.shape[0]
-            labels = torch.eye(batch_size, dtype=torch.float, device=logits.device)
+            # labels = torch.eye(batch_size, dtype=torch.float, device=logits.device)
+            labels = torch.arange(0, batch_size, device=logits.device)
         else:
             batch_size, num_sents, seq_len = sentences2.shape
             sentences2 = sentences2.view(-1, seq_len)
@@ -302,12 +303,12 @@ def train():
 
 
 if __name__ == "__main__":
-    # model = SiameseCbowEncoder(20, 30, 4, pooling="full_connection")
+    model = SiameseCbowEncoder(20, 30, 4, pooling="full_connection")
     # model = MultiheadAttentionEncoder(20, 30, 5, 4, pooling="full_connection")
     # model = TransformerEncoder(20, 30, 5, 4, num_layers=2, pooling="full_connection")
-    # sents1 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
-    # sents2 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
-    # print(model(sents1, sents2))
+    sents1 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
+    sents2 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
+    print(model(sents1, sents2))
 
     # sents2 = torch.tensor([[[1, 2, 4, 0], [2, 3, 4, 1]], [[1, 2, 4, 1], [2, 3, 4, 1]]], dtype=torch.long)
     # labels = torch.tensor([[1, 0], [0, 1]], dtype=torch.float)
@@ -320,4 +321,4 @@ if __name__ == "__main__":
     # print(model(sentences1, sentences2, labels))
     # print(model(sentences1))
 
-    train()
+    # train()
