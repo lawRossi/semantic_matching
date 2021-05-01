@@ -31,8 +31,8 @@ class SentenceEncoder(nn.Module):
             if self.similarity_func == "cosine":
                 sent2_emb = normalize(sent2_emb, p=2, dim=1)
             logits = torch.mm(sent1_emb, sent2_emb.permute(1, 0))
-            batch_size = sentences1.shape[0]
-            labels = torch.eye(batch_size, dtype=torch.float, device=sentences1.device)
+            batch_size = logits.shape[0]
+            labels = torch.eye(batch_size, dtype=torch.float, device=logits.device)
         else:
             batch_size, num_sents, seq_len = sentences2.shape
             sentences2 = sentences2.view(-1, seq_len)
@@ -227,13 +227,13 @@ def train():
         vocab_size = len(dataset.vocab) + 2
 
     if args.encoder == "siamese_cbow":
-        model = SiameseCbowEncoder(vocab_size, args.emb_dims, args.max_len, pooling=args.pooling)
+        model = SiameseCbowEncoder(vocab_size, args.emb_dims, args.max_len, pooling=args.pooling, similarity_func=args.sim_func)
     elif args.encoder == "multihead_attention":
-        model = MultiheadAttentionEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, pooling=args.pooling)
+        model = MultiheadAttentionEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, pooling=args.pooling, similarity_func=args.sim_func)
     elif args.encoder == "transformer":
-        model = TransformerEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, args.num_layers, pooling=args.pooling)
+        model = TransformerEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, args.num_layers, pooling=args.pooling, similarity_func=args.sim_func)
     else:
-        model = BertEncoder(args.bert_model)
+        model = BertEncoder(args.bert_model, similarity_func=args.sim_func)
         dataset = BertDataset(args.data_file, model.tokenizer, args.max_len)
 
     device = torch.device(args.device)
