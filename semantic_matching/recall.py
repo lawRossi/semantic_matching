@@ -58,18 +58,19 @@ class ESIndex(DocumentIndex):
 
 
 class AnnoyIndex(DocumentIndex):
-    def __init__(self, encoder, index_dir="index", dimension=100, num_trees=50):
+    def __init__(self, encoder, index_dir="index", dimension=100, num_trees=50, metric="angular"):
         self.encoder = encoder
         self.annoy_index = None
         self.index_dir = index_dir
         self.dimension = dimension
         self.num_trees = num_trees
+        self.metric = metric
         self.document_ids = []
 
     def build_index(self, documents):
         texts = [document["index_text"] for document in documents]
         encodings = self.encoder.encode_sentences(texts)
-        self.annoy_index = annoy.AnnoyIndex(self.dimension, metric="angular")
+        self.annoy_index = annoy.AnnoyIndex(self.dimension, metric=self.metric)
         for i, (document, encoding) in enumerate(zip(documents, encodings)):
             self.annoy_index.add_item(i, encoding)
             self.document_ids.append(document["id"])
@@ -79,7 +80,7 @@ class AnnoyIndex(DocumentIndex):
     def load_index(self):
         with open(os.path.join(self.index_dir, "parameters.txt")) as fi:
             dimension = int(fi.readline())
-        self.annoy_index = annoy.AnnoyIndex(dimension, metric="angular")
+        self.annoy_index = annoy.AnnoyIndex(dimension, metric=self.metric)
         index_file = os.path.join(self.index_dir, "index.ann")
         self.annoy_index.load(index_file)
         with open(os.path.join(self.index_dir, "document_ids.json")) as fi:
