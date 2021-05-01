@@ -42,6 +42,7 @@ class SentenceEncoder(nn.Module):
             sent2_emb = sent2_emb.view(batch_size, num_sents, -1)
             sent1_emb = sent1_emb.unsqueeze(1)
             logits = torch.bmm(sent1_emb, sent2_emb.permute(0, 2, 1)).squeeze(1)
+        logits *= 20
         return self.loss(logits, labels)
 
     def enocde_sentences(self, sentences):
