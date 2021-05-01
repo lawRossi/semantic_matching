@@ -2,6 +2,7 @@ import os.path
 import torch
 from .encoder import *
 import json
+import numpy as np
 
 
 class EncoderWapper:
@@ -20,7 +21,7 @@ class EncoderWapper:
         self.tokenizer = tokenizer
         self.device = device
 
-    def encode_sentences(self, sentences):
+    def encode_sentences(self, sentences, batch_size=64):
         max_length = self.args["max_length"]
         if self.args["encoder"] != "bert":
             input_ids = []
@@ -30,11 +31,21 @@ class EncoderWapper:
                 token_idxes = token_idxes[:max_length] + [0] * (max_length - len(token_idxes))
                 input_ids.append(token_idxes)
             intput_tensors = torch.tensor(input_ids, dtype=torch.long, device=self.device)
-            return self.model.enocde_sentences(intput_tensors).cpu().detach().numpy()
+            encodings = []
+            for i in range(0, len(sentences), batch_size):
+                batch_input = intput_tensors[i:i+batch_size]
+                batch_encodings = self.model.enocde_sentences(batch_input).cpu().detach().numpy()
+                encodings.append(batch_encodings)
+            return np.concatenate(encodings)
         else:
-            sentences = self.model.tokenizer(sentences, return_tensors="pt", padding="max_length", truncation=True, max_length=max_length)
-            sentences = {k: v.to(self.device) for k, v in sentences.items()}
-            return self.model.enocde_sentences(sentences).cpu().detach().numpy()
+            encodings = []
+            for i in range(0, len(sentences), batch_size):
+                batch_sentences = sentences[i:i+batch_size]
+                batch_sentences = self.model.tokenizer(batch_sentences, return_tensors="pt", padding="max_length", truncation=True, max_length=max_length)
+                batch_sentences = {k: v.to(self.device) for k, v in sentences.items()}
+                batch_encodings = self.model.enocde_sentences(batch_sentences).cpu().detach().numpy()
+                encodings.append(batch_encodings)
+            return np.concatenate(encodings)
 
 
 if __name__ == "__main__":
