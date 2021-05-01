@@ -42,7 +42,7 @@ class EncoderWapper:
             for i in range(0, len(sentences), batch_size):
                 batch_sentences = sentences[i:i+batch_size]
                 batch_sentences = self.model.tokenizer(batch_sentences, return_tensors="pt", padding="max_length", truncation=True, max_length=max_length)
-                batch_sentences = {k: v.to(self.device) for k, v in sentences.items()}
+                batch_sentences = {k: v.to(self.device) for k, v in batch_sentences.items()}
                 batch_encodings = self.model.enocde_sentences(batch_sentences).cpu().detach().numpy()
                 encodings.append(batch_encodings)
             return np.concatenate(encodings)
