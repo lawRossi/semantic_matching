@@ -29,7 +29,7 @@ class EncoderWapper:
                 token_idxes = [self.vocab.get(token, len(self.vocab)+1) for token in tokens]
                 token_idxes = token_idxes[:max_length] + [0] * (max_length - len(token_idxes))
                 input_ids.append(token_idxes)
-            intput_tensors = torch.tensor(input_ids, dtype=torch.long)
+            intput_tensors = torch.tensor(input_ids, dtype=torch.long, device=self.device)
             return self.model.enocde_sentences(intput_tensors).cpu().detach().numpy()
         else:
             sentences = self.model.tokenizer(sentences, return_tensors="pt", padding="max_length", truncation=True, max_length=max_length)
