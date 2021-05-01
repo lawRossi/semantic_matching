@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 from tqdm import tqdm, trange
 from tensorboardX import SummaryWriter
-from dataset import BertDataset, SentencePairDataset
+from .dataset import BertDataset, SentencePairDataset
 import argparse
 import os.path
 from transformers import AutoModel, AutoTokenizer
