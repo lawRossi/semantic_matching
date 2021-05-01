@@ -1,8 +1,8 @@
 from elasticsearch import Elasticsearch
-from annoy import AnnoyIndex
-from gensim.models import KeyedVectors
+import annoy
 import os
 import faiss
+import json
 
 
 class DocumentIndex:
@@ -68,42 +68,44 @@ class AnnoyIndex(DocumentIndex):
 
     def build_index(self, documents):
         texts = [document["index_text"] for document in documents]
-        encodings = self.encoder.encode(texts)
-        self.annoy_index = AnnoyIndex(self.dimension, metric="angular")
-        for i, document, encoding in enumerate(zip(documents, encodings)):
+        encodings = self.encoder.encode_sentences(texts)
+        self.annoy_index = annoy.AnnoyIndex(self.dimension, metric="angular")
+        for i, (document, encoding) in enumerate(zip(documents, encodings)):
             self.annoy_index.add_item(i, encoding)
             self.document_ids.append(document["id"])
         self.annoy_index.build(self.num_trees)
         self._save_annoy_index()
-    
+
     def load_index(self):
         with open(os.path.join(self.index_dir, "parameters.txt")) as fi:
             dimension = int(fi.readline())
-        self.annoy_index = AnnoyIndex(dimension, metric="angular")
+        self.annoy_index = annoy.AnnoyIndex(dimension, metric="angular")
         index_file = os.path.join(self.index_dir, "index.ann")
         self.annoy_index.load(index_file)
-        with open(os.path.join(self.index_dir, "document_ids.txt")) as fi:
-            self.document_ids = [line.strip() for line in fi]
+        with open(os.path.join(self.index_dir, "document_ids.json")) as fi:
+            self.document_ids = json.load(fi)
 
     def add_documents(self, documents):
         raise NotImplementedError
 
     def retrieve(self, query, max_num):
-        query_vec = self.encoder.encode(query)
+        query_vec = self.encoder.encode_sentences([query])[0]
         retrieved_ids = [self.document_ids[idx] for idx in self.annoy_index.get_nns_by_vector(query_vec, max_num)]
         return retrieved_ids
-    
+
     def get_document_by_ids(self, document_ids):
         raise NotImplementedError
 
     def _save_annoy_index(self):
         save_dir = self.index_dir
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
         index_file = os.path.join(save_dir, "index.ann")
         self.annoy_index.save(index_file)
         with open(os.path.join(save_dir, "parameters.txt"), "w") as fo:
             fo.write(str(self.dimension)+"\n")
-        with open(os.path.join(self.index_dir, "document_ids.txt"), "w") as fo:
-            fo.write("\n".join(self.document_ids))
+        with open(os.path.join(self.index_dir, "document_ids.json"), "w") as fo:
+            json.dump(self.document_ids, fo)
 
 
 class FaissIndex(DocumentIndex):
@@ -123,12 +125,21 @@ class FaissIndex(DocumentIndex):
     def build_index(self, documents):
         self._init_index()
         texts = [document["index_text"] for document in documents]
-        encodings = self.encoder.encode(texts)
+        encodings = self.encoder.encode_sentences(texts)
+        if self.metric == "cosine":
+            faiss.normalize_L2(encodings)
         self.index.train(encodings)
         self.index.add(encodings)
         self.document_ids = [document["id"] for document in documents]
         self._save_index()
-    
+
+    def retrieve(self, query, max_num):
+        query_vec = self.encoder.encode_sentences([query])
+        if self.metric == "cosine":
+            faiss.normalize_L2(query_vec)
+        _, nns = self.index.search(query_vec, max_num)
+        return [[self.document_ids[idx] for idx in item if idx != -1] for item in nns]
+
     def add_documents(self, documents):
         texts = [document["index_text"] for document in documents]
         encodings = self.encoder.encode(texts)
@@ -137,16 +148,18 @@ class FaissIndex(DocumentIndex):
             self.document_ids.append(document["id"])
 
     def _save_index(self):
-        index_file = os.path.join(self.save_dir, "index.faiss")
+        if not os.path.exists(self.index_dir):
+            os.makedirs(self.index_dir)
+        index_file = os.path.join(self.index_dir, "index.faiss")
         faiss.write_index(self.index, index_file)
-        with open(os.path.join(self.index_dir, "document_ids.txt"), "w") as fo:
-            fo.write("\n".join(self.document_ids))
+        with open(os.path.join(self.index_dir, "document_ids.json"), "w") as fo:
+            json.dump(self.document_ids, fo)
 
     def load_index(self):
-        index_file = os.path.join(self.save_dir, "index.faiss")
+        index_file = os.path.join(self.index_dir, "index.faiss")
         self.index = faiss.read_index(index_file)
-        with open(os.path.join(self.index_dir, "document_ids.txt")) as fi:
-            self.document_ids = [line.strip() for line in fi]
+        with open(os.path.join(self.index_dir, "document_ids.json")) as fi:
+            self.document_ids = json.load(fi)
 
     def get_document_by_ids(self, document_ids):
         raise NotImplementedError

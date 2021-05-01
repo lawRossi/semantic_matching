@@ -31,7 +31,7 @@ class SentencePairDataset(torch.utils.data.Dataset):
                 splits = line.strip().split("\t")
                 if len(splits) == 3:
                     label, sent1, sent2 = splits
-                    self.data.append((sent1, sent2, label))
+                    self.data.append((sent1, sent2, int(label)))
                 elif len(splits) == 2:
                     sent1, sent2 = splits
                     self.data.append((sent1, sent2))
@@ -82,5 +82,49 @@ class SentencePairDataset(torch.utils.data.Dataset):
                 new_item = (np.array(token_idxes1, dtype=np.int64), np.array(token_idxes2, dtype=np.int64))
             else:
                 label = item[2]
-                new_item = (np.array(token_idxes1), np.array(token_idxes2), label)
+                new_item = (np.array(token_idxes1, dtype=np.int64), np.array(token_idxes2, dtyp=np.int64), label)
             self.data[i] = new_item
+
+
+class BertDataset(torch.utils.data.Dataset):
+    def __init__(self, data_file, tokenizer, max_len=30) -> None:
+        super().__init__()
+        self.data_file = data_file
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+        self._load_data()
+
+    def __getitem__(self, index):
+        return self.data[index]
+    
+    def __len__(self):
+        return len(self.data)
+
+    def _load_data(self):
+        self.data = []
+        with open(self.data_file, encoding="utf-8") as fi:
+            pbar = tqdm.tqdm(fi, "loading data")
+            for line in pbar:
+                splits = line.strip().split("\t")
+                if len(splits) == 3:
+                    label, sent1, sent2 = splits
+                elif len(splits) == 2:
+                    sent1, sent2 = splits
+                    label = None
+                elif len(splits) == 1:
+                    sent1 = splits[0]
+                    sent2 = None 
+                else:
+                    raise RuntimeError("invalid file format")
+                sample = {} if label is None else {"label": int(label)}
+                output = self._tokenize(sent1)
+                output = {f"sent1_{k}": np.array(v, dtype=np.int64) for k, v in output.items()}
+                sample.update(output)
+                if sent2:
+                    output = self._tokenize(sent2)
+                    output = {f"sent2_{k}": np.array(v, dtype=np.int64) for k, v in output.items()}
+                    sample.update(output)
+                self.data.append(sample)
+
+    def _tokenize(self, sentence):
+        return self.tokenizer(sentence, padding="max_length", max_length=self.max_len, truncation=True)
