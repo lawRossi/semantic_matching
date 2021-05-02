@@ -176,7 +176,7 @@ class BertEncoder(SentenceEncoder):
         if self.pooling == "mean":
             return output.last_hidden_state.mean(dim=1)
         elif self.pooling == "cls":
-            return output.last_hidden_state[0]
+            return output.last_hidden_state[:, 0]
 
 
 if __name__ == "__main__":
