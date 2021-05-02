@@ -145,10 +145,11 @@ class TransformerEncoder(SentenceEncoder):
 
 
 class BertEncoder(SentenceEncoder):
-    def __init__(self, model_name_or_path, temperature=0.05):
+    def __init__(self, model_name_or_path, temperature=0.05, pooling="mean"):
         super().__init__(temperature)
         self.bert_model = AutoModel.from_pretrained(model_name_or_path)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.pooling = pooling
 
     def forward(self, sentences1, sentences2=None, labels=None):
         in_batch_negative = labels is None
@@ -172,24 +173,27 @@ class BertEncoder(SentenceEncoder):
 
     def enocde_sentences(self, sentences):
         output = self.bert_model(**sentences)
-        return output.last_hidden_state.mean(dim=1)
+        if self.pooling == "mean":
+            return output.last_hidden_state.mean(dim=1)
+        elif self.pooling == "cls":
+            return output.last_hidden_state[0]
 
 
 if __name__ == "__main__":
-    model = SiameseCbowEncoder(20, 30, 4, pooling="full_connection")
+    # model = SiameseCbowEncoder(20, 30, 4, pooling="full_connection")
     # model = MultiheadAttentionEncoder(20, 30, 5, 4, pooling="full_connection")
     # model = TransformerEncoder(20, 30, 5, 4, num_layers=2, pooling="full_connection")
-    sents1 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
-    sents2 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
-    print(model(sents1, sents2))
+    # sents1 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
+    # sents2 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
+    # print(model(sents1, sents2))
 
     # sents2 = torch.tensor([[[1, 2, 4, 0], [2, 3, 4, 1]], [[1, 2, 4, 1], [2, 3, 4, 1]]], dtype=torch.long)
     # labels = torch.tensor([[1, 0], [0, 1]], dtype=torch.float)
     # print(model(sents1, sents2, labels))
     
-    # model= BertEncoder("C:/code/models/chinese_base")
-    # sentences1 = model.tokenizer(["你好吗", "你好美"], return_tensors="pt")
-    # sentences2 = model.tokenizer(["你好呀", "你很美"], return_tensors="pt")
+    model= BertEncoder("C:/code/models/chinese_base", pooling="cls")
+    sentences1 = model.tokenizer(["你好吗", "你好美"], return_tensors="pt")
+    sentences2 = model.tokenizer(["你好呀", "你很美"], return_tensors="pt")
     # labels = torch.tensor([0, 1], dtype=torch.float)
     # print(model(sentences1, sentences2, labels))
-    # print(model(sentences1))
+    print(model(sentences1))

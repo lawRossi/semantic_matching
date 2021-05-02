@@ -23,7 +23,7 @@ def setup_argparser():
     parser.add_argument("--emb_dims", type=int, default=100, help="embedding dimensions")
     parser.add_argument("--num_heads", type=int, default=5, help="number of attention heads")
     parser.add_argument("--num_layers", type=int, default=1, help="number of transformer layers")
-    parser.add_argument("--pooling", type=str, default="mean", choices=['mean', 'attention', 'full_connection'], 
+    parser.add_argument("--pooling", type=str, default="mean", choices=['mean', 'attention', 'full_connection', 'cls'], 
         help="type of pooling, incuding 'mean', 'attention', 'full_connection'")
     parser.add_argument("--lr", type=float, default=3e-5, help="learning rate")
     parser.add_argument("--warmup_proportion", default=0.1, type=float,
@@ -53,7 +53,7 @@ def train():
     elif args.encoder == "transformer":
         model = TransformerEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, args.num_layers, temperature=args.t, pooling=args.pooling)
     else:
-        model = BertEncoder(args.bert_model, temperature=args.t)
+        model = BertEncoder(args.bert_model, temperature=args.t, pooling=args.pooling)
         cache_path = os.path.join(os.path.dirname(args.data_file), ".bert")
         dataset = BertDataset(args.data_file, model.tokenizer, args.max_len, cache_path=cache_path)
 
