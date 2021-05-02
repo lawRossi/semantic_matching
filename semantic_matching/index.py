@@ -110,7 +110,7 @@ class AnnoyIndex(DocumentIndex):
 
 
 class FaissIndex(DocumentIndex):
-    def __init__(self, encoder, index_dir, dimension, n_clusters=1, n_pq=10, n_bytes=4, metric="cosine"):
+    def __init__(self, encoder, index_dir, dimension, n_clusters=1, n_pq=None, n_bytes=4, nprob=1, metric="cosine"):
         self.encoder = encoder
         self.index_dir = index_dir
         self.dimension = dimension
@@ -118,10 +118,15 @@ class FaissIndex(DocumentIndex):
         self.n_pq = n_pq
         self.n_bytes = n_bytes
         self.metric = metric
+        self.nprob = nprob
 
     def _init_index(self):
-        quantizer = faiss.IndexFlatIP(self.dimension) 
-        self.index = faiss.IndexIVFPQ(quantizer, self.dimension, self.n_clusters, self.n_bytes, self.n_pq)
+        quantizer = faiss.IndexFlatIP(self.dimension)
+        if self.n_pq is None:
+            self.index = faiss.IndexIVFFlat(quantizer, self.dimension, self.n_clusters)
+        else:
+            self.index = faiss.IndexIVFPQ(quantizer, self.dimension, self.n_clusters, self.n_pq, self.n_bytes)
+        self.index.nprob = self.nprob
 
     def build_index(self, documents):
         self._init_index()
@@ -139,7 +144,7 @@ class FaissIndex(DocumentIndex):
         if self.metric == "cosine":
             faiss.normalize_L2(query_vec)
         _, nns = self.index.search(query_vec, max_num)
-        return [[self.document_ids[idx] for idx in item if idx != -1] for item in nns]
+        return [self.document_ids[idx] for idx in nns[0]]
 
     def add_documents(self, documents):
         texts = [document["index_text"] for document in documents]
