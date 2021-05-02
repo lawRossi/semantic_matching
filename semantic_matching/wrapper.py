@@ -15,7 +15,7 @@ class EncoderWapper:
             with open(os.path.join(model_dir, "vocab.json"), encoding="utf-8") as fi:
                 self.vocab = json.load(fi)
         else:
-            self.model = BertEncoder(model_dir)
+            self.model = BertEncoder(model_dir, pooling=self.args["pooling"])
             self.model.to(device)
         self.model.eval()
         self.tokenizer = tokenizer
