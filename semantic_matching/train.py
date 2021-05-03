@@ -2,7 +2,7 @@ from semantic_matching.encoder import *
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 from tensorboardX import SummaryWriter
-from .dataset import BertDataset, SentencePairDataset
+from .dataset import BertDataset, TextGroupDataset
 import argparse
 import os.path
 from transformers import AdamW
@@ -18,6 +18,7 @@ def setup_argparser():
     parser.add_argument("--bert_model", type=str, default="bert-base-chinese", help="specify which pretrained model to use")
     parser.add_argument("--data_file", type=str, help="path of the data file")
     parser.add_argument("--save_dir", type=str, help="path of the directory to save model")
+    parser.add_argument("--with_negative", action="store_true", help="whether to train with hard negatives")
     parser.add_argument("--min_tf", type=int, default=3, help="minimum term frequence")
     parser.add_argument("--max_len", type=int, default=30, help="maximum number of tokens per sentence")
     parser.add_argument("--emb_dims", type=int, default=100, help="embedding dimensions")
@@ -44,7 +45,8 @@ def train():
 
     if args.encoder != "bert":
         cache_path = os.path.join(os.path.dirname(args.data_file), ".sent_pairs")
-        dataset = SentencePairDataset(args.data_file, args.min_tf, args.max_len, cache_path=cache_path)
+        dataset = TextGroupDataset(args.data_file, args.min_tf, args.max_len, 
+            with_negative=args.with_negative, cache_path=cache_path)
         vocab_size = dataset.vocab_size
     if args.encoder == "siamese_cbow":
         model = SiameseCbowEncoder(vocab_size, args.emb_dims, args.max_len, temperature=args.t, pooling=args.pooling)

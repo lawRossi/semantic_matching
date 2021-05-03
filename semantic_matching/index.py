@@ -70,6 +70,9 @@ class AnnoyIndex(DocumentIndex):
     def build_index(self, documents):
         texts = [document["index_text"] for document in documents]
         encodings = self.encoder.encode_sentences(texts)
+        self._build_index(documents, encodings)
+
+    def _build_index(self, documents, encodings):
         self.annoy_index = annoy.AnnoyIndex(self.dimension, metric=self.metric)
         for i, (document, encoding) in enumerate(zip(documents, encodings)):
             self.annoy_index.add_item(i, encoding)
@@ -90,8 +93,13 @@ class AnnoyIndex(DocumentIndex):
         raise NotImplementedError
 
     def retrieve(self, query, max_num):
-        query_vec = self.encoder.encode_sentences([query])[0]
-        retrieved_ids = [self.document_ids[idx] for idx in self.annoy_index.get_nns_by_vector(query_vec, max_num)]
+        query_encoding = self.encoder.encode_sentences([query])[0]
+        return self.retrieve_by_encoding(query_encoding, max_num)
+
+    def retrieve_by_encoding(self, encoding, max_num):
+        retrieved_ids = [
+            self.document_ids[idx] for idx in self.annoy_index.get_nns_by_vector(encoding, max_num)
+        ]
         return retrieved_ids
 
     def get_document_by_ids(self, document_ids):

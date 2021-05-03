@@ -1,4 +1,5 @@
 from collections import defaultdict
+from pycparser.ply.yacc import token
 import torch
 import jieba
 import tqdm
@@ -10,14 +11,16 @@ import shutil
 import struct
 
 
-class SentencePairDataset(torch.utils.data.Dataset):
-    def __init__(self, data_file, min_tf=3, max_len=30, vocab=None, tokenize=None, cache_path=".sent_pair", rebuild_cache=False) -> None:
+class TextGroupDataset(torch.utils.data.Dataset):
+    def __init__(self, data_file, min_tf=3, max_len=30, vocab=None, tokenize=None, with_negative=False,
+            cache_path=".sent_pair", rebuild_cache=False) -> None:
         super().__init__()
         self.data_file = data_file
         self.min_tf = min_tf
         self.max_len = max_len
         self.vocab = vocab
         self.tokenize = tokenize
+        self.with_negative = with_negative
 
         if rebuild_cache or not os.path.exists(cache_path):
             shutil.rmtree(cache_path, ignore_errors=True)
@@ -43,7 +46,10 @@ class SentencePairDataset(torch.utils.data.Dataset):
             pbar = tqdm.tqdm(fi, "loading data")
             for line in pbar:
                 splits = line.strip().split("\t")
-                if len(splits) == 3:
+                if self.with_negative:
+                    sent1, sent2, *negatives = splits
+                    self.data.append((sent1, sent2, negatives))
+                elif len(splits) == 3:
                     label, sent1, sent2 = splits
                     self.data.append((sent1, sent2, int(label)))
                 elif len(splits) == 2:
@@ -64,7 +70,10 @@ class SentencePairDataset(torch.utils.data.Dataset):
             tokens1 = tokenize(sent1)
             sent2 = item[1]
             tokens2 = tokenize(sent2)
-            if len(item) == 2:
+            if self.with_negative:
+                tokens3 = [tokenize(sent) for sent in item[2]]
+                new_item = (tokens1, tokens2, tokens3)
+            elif len(item) == 2:
                 new_item = (tokens1, tokens2)
             else:
                 label = item[2]
@@ -99,22 +108,33 @@ class SentencePairDataset(torch.utils.data.Dataset):
         buffer = []
         for i in pbar:
             item = self.data[i]
-            tokens1 = item[0]
-            token_idxes1 = [self.vocab.get(token, len(self.vocab)+1) for token in tokens1]
-            token_idxes1 = token_idxes1[:self.max_len] + [0] * (self.max_len - len(token_idxes1))
-            tokens2 = item[1]
-            token_idxes2 = [self.vocab.get(token, len(self.vocab)+1) for token in tokens2]
-            token_idxes2 = token_idxes2[:self.max_len] + [0] * (self.max_len - len(token_idxes2))
-            if len(item) == 2:
-                new_item = (np.array(token_idxes1, dtype=np.int64), np.array(token_idxes2, dtype=np.int64))
+            token_idxes1 = self._token2idx(item[0])
+            token_idxes2 = self._token2idx(item[1])
+            if self.with_negative:
+                token_idxes3 = self._token2idx(item[2])
+                new_item = (token_idxes1, token_idxes2, token_idxes3)
+            elif len(item) == 2:
+                new_item = (token_idxes1, token_idxes2)
             else:
                 label = item[2]
-                new_item = (np.array(token_idxes1, dtype=np.int64), np.array(token_idxes2, dtyp=np.int64), label)
+                new_item = (token_idxes1, token_idxes2, label)
             buffer.append((struct.pack(">I", i), pickle.dumps(new_item)))
             if len(buffer) % 1000 == 0:
                 yield buffer
                 buffer.clear()
         yield buffer
+
+    def _token2idx(self, tokens):
+        if isinstance(tokens[0], list):
+            token_idxes = []
+            for tokens_ in tokens:
+                token_idxes_ = [self.vocab.get(token, len(self.vocab)+1) for token in tokens_]
+                token_idxes_ = token_idxes_[:self.max_len] + [0] * (self.max_len - len(token_idxes_))
+                token_idxes.append(token_idxes_)
+        else:
+            token_idxes = [self.vocab.get(token, len(self.vocab)+1) for token in tokens]
+            token_idxes = token_idxes[:self.max_len] + [0] * (self.max_len - len(token_idxes))
+        return np.array(token_idxes, dtype=np.int64)
 
 
 class BertDataset(torch.utils.data.Dataset):

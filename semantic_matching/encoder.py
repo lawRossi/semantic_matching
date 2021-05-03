@@ -10,7 +10,7 @@ class SentenceEncoder(nn.Module):
         self.temperature = temperature
         self.loss = nn.CrossEntropyLoss()
 
-    def forward(self, sentences1, sentences2, labels=None):
+    def forward(self, sentences1, sentences2, negatives=None, labels=None):
         in_batch_negative = labels is None
         sent1_emb = self.enocde_sentences(sentences1)
         sent1_emb = normalize(sent1_emb, p=2, dim=1)
@@ -18,21 +18,30 @@ class SentenceEncoder(nn.Module):
             sent2_emb = self.enocde_sentences(sentences2)
             sent2_emb = normalize(sent2_emb, p=2, dim=1)
             logits = torch.mm(sent1_emb, sent2_emb.permute(1, 0))
+            if negatives is not None:
+                neg_emb = self._encode_multiple_sentences(negatives)
+                sent1_emb = sent1_emb.unsqueeze(dim=1)
+                logits_ = torch.mul(sent1_emb, neg_emb).sum(dim=2)
+                logits = torch.cat([logits, logits_], dim=1)
             batch_size = logits.shape[0]
             logits /= self.temperature
             labels = torch.arange(0, batch_size, device=logits.device)
         else:
-            batch_size, num_sents, seq_len = sentences2.shape
-            sentences2 = sentences2.view(-1, seq_len)
-            sent2_emb = self.enocde_sentences(sentences2)
-            sent2_emb = normalize(sent2_emb, p=2, dim=1)
-            sent2_emb = sent2_emb.view(batch_size, num_sents, -1)
+            sent2_emb = self._encode_multiple_sentences(sentences2)
             sent1_emb = sent1_emb.unsqueeze(1)
             logits = torch.bmm(sent1_emb, sent2_emb.permute(0, 2, 1)).squeeze(1)
         return self.loss(logits, labels)
 
     def enocde_sentences(self, sentences):
         pass
+
+    def _encode_multiple_sentences(self, sentences):
+        batch_size, num_sents, seq_len = sentences.shape
+        sentences = sentences.view(-1, seq_len)
+        sent_emb = self.enocde_sentences(sentences)
+        sent_emb = normalize(sent_emb, p=2, dim=1)
+        sent_emb = sent_emb.view(batch_size, num_sents, -1)
+        return sent_emb
 
 
 class AdditiveAttention(nn.Module):
@@ -180,20 +189,21 @@ class BertEncoder(SentenceEncoder):
 
 
 if __name__ == "__main__":
-    # model = SiameseCbowEncoder(20, 30, 4, pooling="full_connection")
+    model = SiameseCbowEncoder(20, 30, 4, pooling="full_connection")
     # model = MultiheadAttentionEncoder(20, 30, 5, 4, pooling="full_connection")
     # model = TransformerEncoder(20, 30, 5, 4, num_layers=2, pooling="full_connection")
-    # sents1 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
-    # sents2 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
-    # print(model(sents1, sents2))
+    sents1 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
+    sents2 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
+    negatives =  torch.tensor([[[1, 2, 4, 0], [2, 3, 4, 1]], [[1, 2, 4, 0], [2, 3, 4, 1]]], dtype=torch.long)
+    print(model(sents1, sents2, negatives=negatives))
 
     # sents2 = torch.tensor([[[1, 2, 4, 0], [2, 3, 4, 1]], [[1, 2, 4, 1], [2, 3, 4, 1]]], dtype=torch.long)
     # labels = torch.tensor([[1, 0], [0, 1]], dtype=torch.float)
     # print(model(sents1, sents2, labels))
     
-    model= BertEncoder("C:/code/models/chinese_base", pooling="cls")
-    sentences1 = model.tokenizer(["你好吗", "你好美"], return_tensors="pt")
-    sentences2 = model.tokenizer(["你好呀", "你很美"], return_tensors="pt")
+    # model= BertEncoder("C:/code/models/chinese_base", pooling="cls")
+    # sentences1 = model.tokenizer(["你好吗", "你好美"], return_tensors="pt")
+    # sentences2 = model.tokenizer(["你好呀", "你很美"], return_tensors="pt")
     # labels = torch.tensor([0, 1], dtype=torch.float)
     # print(model(sentences1, sentences2, labels))
-    print(model(sentences1))
+    # print(model(sentences1))
