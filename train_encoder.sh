@@ -1,10 +1,13 @@
-python -m semantic_matching.encoder \
+python -m semantic_matching.train \
 --encoder siamese_cbow \
---max_len 100 \
+--bert_model bert-base-chinese \
+--with_negative \
+--emb_dims 100 \
+--max_len 30 \
 --pooling mean \
---batch_size 32 \
---data_file data/train.txt \
+--batch_size 1 \
+--data_file data/train_neg.txt \
 --save_dir output \
---epochs 5 \
+--epochs 1 \
 --device cpu \
 --workers 1
