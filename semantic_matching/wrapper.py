@@ -3,9 +3,10 @@ import torch
 from .encoder import *
 import json
 import numpy as np
+import jieba
 
 
-class EncoderWapper:
+class EncoderWrapper:
     def __init__(self, model_dir, tokenizer=None, device="cpu") -> None:
         with open(os.path.join(model_dir, "args.json")) as fi:
             self.args = json.load(fi)
@@ -18,7 +19,11 @@ class EncoderWapper:
             self.model = BertEncoder(model_dir, pooling=self.args["pooling"])
             self.model.to(device)
         self.model.eval()
-        self.tokenizer = tokenizer
+        self.dimension = self.args["dimension"]
+        if tokenizer is None:
+            self.tokenizer = jieba.lcut
+        else:
+            self.tokenizer = tokenizer
         self.device = device
 
     def encode_sentences(self, sentences, batch_size=64):
@@ -46,10 +51,3 @@ class EncoderWapper:
                 batch_encodings = self.model.enocde_sentences(batch_sentences).cpu().detach().numpy()
                 encodings.append(batch_encodings)
             return np.concatenate(encodings)
-
-
-if __name__ == "__main__":
-    import jieba
-
-    encoder = EncoderWapper("output", jieba.lcut)
-    print(encoder.encode_sentences(["我累了"]))

@@ -119,7 +119,8 @@ def train():
         model.tokenizer.save_pretrained(args.save_dir)
     with open(os.path.join(args.save_dir, "args.json"), "w") as fo:
         args = {"encoder": args.encoder, "temperature": args.t, 
-                "max_length": args.max_len, "pooling": args.pooling}
+                "max_length": args.max_len, "pooling": args.pooling,
+                "dimension": args.emb_dims if args.encoder != "bert" else 768}
         json.dump(args, fo)
 
 

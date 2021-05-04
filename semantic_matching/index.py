@@ -14,12 +14,12 @@ class DocumentIndex:
 
     def retrieve(self, query, max_num):
         pass
-    
+
     def add_documents(self, documents):
-        pass
+        raise NotImplementedError
 
     def get_document_by_ids(self, document_ids):
-        pass
+        raise NotImplementedError
 
 
 class ESIndex(DocumentIndex):
@@ -58,11 +58,11 @@ class ESIndex(DocumentIndex):
 
 
 class AnnoyIndex(DocumentIndex):
-    def __init__(self, encoder, index_dir="index", dimension=100, num_trees=50, metric="angular"):
+    def __init__(self, encoder, index_dir="index", num_trees=50, metric="angular"):
         self.encoder = encoder
         self.annoy_index = None
         self.index_dir = index_dir
-        self.dimension = dimension
+        self.dimension = encoder.dimension
         self.num_trees = num_trees
         self.metric = metric
         self.document_ids = []
@@ -102,9 +102,6 @@ class AnnoyIndex(DocumentIndex):
         ]
         return retrieved_ids
 
-    def get_document_by_ids(self, document_ids):
-        raise NotImplementedError
-
     def _save_annoy_index(self):
         save_dir = self.index_dir
         if not os.path.exists(save_dir):
@@ -118,10 +115,10 @@ class AnnoyIndex(DocumentIndex):
 
 
 class FaissIndex(DocumentIndex):
-    def __init__(self, encoder, index_dir, dimension, n_clusters=1, n_pq=None, n_bytes=4, nprob=1, metric="cosine"):
+    def __init__(self, encoder, index_dir, n_clusters=1, n_pq=None, n_bytes=4, nprob=1, metric="cosine"):
         self.encoder = encoder
         self.index_dir = index_dir
-        self.dimension = dimension
+        self.dimension = encoder.dimension
         self.n_clusters = n_clusters
         self.n_pq = n_pq
         self.n_bytes = n_bytes
@@ -174,6 +171,3 @@ class FaissIndex(DocumentIndex):
         self.index = faiss.read_index(index_file)
         with open(os.path.join(self.index_dir, "document_ids.json")) as fi:
             self.document_ids = json.load(fi)
-
-    def get_document_by_ids(self, document_ids):
-        raise NotImplementedError
