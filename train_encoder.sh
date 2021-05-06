@@ -1,10 +1,10 @@
 python -m semantic_matching.train \
---encoder siamese_cbow \
---bert_model bert-base-chinese \
+--encoder lstm \
+--bert_model /data/bert_model/chinese_base \
 --with_negative \
 --emb_dims 100 \
 --max_len 30 \
---pooling mean \
+--pooling full_connection \
 --batch_size 1 \
 --data_file data/train_neg.txt \
 --save_dir output \

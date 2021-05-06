@@ -1,4 +1,5 @@
 from collections import defaultdict
+from re import split
 from pycparser.ply.yacc import token
 import torch
 import jieba
@@ -9,6 +10,7 @@ import pickle
 import os
 import shutil
 import struct
+import random
 
 
 class TextGroupDataset(torch.utils.data.Dataset):
@@ -154,6 +156,10 @@ class BertDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         with self.env.begin(write=False) as txn:
             item = pickle.loads(txn.get(struct.pack(">I", index)))
+            if "negatives" in item:
+                negative = random.choice(item["negatives"])
+                del(item["negatives"])
+                item.update(negative)
         return item
 
     def __len__(self):
@@ -172,18 +178,18 @@ class BertDataset(torch.utils.data.Dataset):
             pbar = tqdm.tqdm(fi, "building cache")
             for i, line in enumerate(pbar):
                 splits = line.strip().split("\t")
-                if len(splits) == 3:
-                    label, sent1, sent2 = splits
+                if len(splits) > 2:
+                    sent1, sent2, *negatives = splits
                 elif len(splits) == 2:
                     sent1, sent2 = splits
-                    label = None
+                    negatives = None
                 elif len(splits) == 1:
                     sent1 = splits[0]
                     sent2 = None
-                    label = None
+                    negatives = None
                 else:
                     raise RuntimeError("invalid file format")
-                sample = {} if label is None else {"label": int(label)}
+                sample = {}
                 output = self._tokenize(sent1)
                 output = {f"sent1_{k}": np.array(v, dtype=np.int64) for k, v in output.items()}
                 sample.update(output)
@@ -191,6 +197,10 @@ class BertDataset(torch.utils.data.Dataset):
                     output = self._tokenize(sent2)
                     output = {f"sent2_{k}": np.array(v, dtype=np.int64) for k, v in output.items()}
                     sample.update(output)
+                if negatives:
+                    negatives = [self._tokenize(negative) for negative in negatives]
+                    negatives = [{f"neg_{k}": np.array(v, dtype=np.int64) for k, v in negative.items()} for negative in negatives]
+                    sample["negatives"] = negatives
                 buffer.append((struct.pack(">I", i), pickle.dumps(sample)))
                 if len(buffer) == 1000:
                     yield buffer

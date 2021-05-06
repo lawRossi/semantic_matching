@@ -1,3 +1,4 @@
+from transformers.utils.dummy_pt_objects import get_scheduler
 from semantic_matching.encoder import *
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
@@ -14,7 +15,7 @@ import json
 def setup_argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--encoder", type=str, default="siamese_cbow", 
-        choices=["siamese_cbow", "multihead_attention", "transformer", "bert"],  help="specify which encoder to use")
+        choices=["siamese_cbow", "multihead_attention", "lstm", "transformer", "bert"],  help="specify which encoder to use")
     parser.add_argument("--bert_model", type=str, default="bert-base-chinese", help="specify which pretrained model to use")
     parser.add_argument("--data_file", type=str, help="path of the data file")
     parser.add_argument("--save_dir", type=str, help="path of the directory to save model")
@@ -39,10 +40,7 @@ def setup_argparser():
     return parser
 
 
-def train():
-    parser = setup_argparser()
-    args = parser.parse_args()
-
+def setup_model_and_dataset(args):
     if args.encoder != "bert":
         cache_path = os.path.join(os.path.dirname(args.data_file), ".sent_pairs")
         dataset = TextGroupDataset(args.data_file, args.min_tf, args.max_len, 
@@ -52,6 +50,8 @@ def train():
         model = SiameseCbowEncoder(vocab_size, args.emb_dims, args.max_len, temperature=args.t, pooling=args.pooling)
     elif args.encoder == "multihead_attention":
         model = MultiheadAttentionEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, temperature=args.t, pooling=args.pooling)
+    elif args.encoder == "lstm":
+        model = LstmEncoder(vocab_size, args.emb_dims, args.max_len, temperature=args.t, pooling=args.pooling)
     elif args.encoder == "transformer":
         model = TransformerEncoder(vocab_size, args.emb_dims, args.num_heads, args.max_len, args.num_layers, temperature=args.t, pooling=args.pooling)
     else:
@@ -62,9 +62,10 @@ def train():
     device = torch.device(args.device)
     model.to(device)
     model.train()
+    return model, dataset
 
-    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
 
+def setup_optimizer(model, dataset, args):
     if args.encoder != "bert":     
         optimizer = AdamW(model.parameters(), lr=args.lr)
     else:
@@ -77,38 +78,10 @@ def train():
     num_train_steps = math.ceil(len(dataset) * args.epochs / args.batch_size)
     num_warmup_steps = int(args.warmup_proportion * num_train_steps)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_train_steps)
+    return optimizer, scheduler
 
-    if args.use_tb:
-        tb_writer = SummaryWriter()
 
-    global_step = 0
-    log_interval = 50
-    for _ in trange(args.epochs, desc="Epoch"):
-        total_loss = 0
-        pbar = tqdm(data_loader, desc="Interation")
-        for step, batch in enumerate(pbar):
-            if args.encoder != "bert":
-                batch = [item.to(device) for item in batch]
-            else:
-                batch = {k: v.to(device) for k, v in batch.items()}
-                sentences1 = {k.replace("sent1_", ""): v for k, v in batch.items() if k.startswith("sent1_")}
-                sentences2 = {k.replace("sent2_", ""): v for k, v in batch.items() if k.startswith("sent2_")}
-                sentences2 = sentences2 or None
-                labels = batch.get("label")
-                batch = [sentences1, sentences2, labels]
-            loss = model(*batch)
-            loss.backward()
-            optimizer.step()
-            if scheduler is not None:
-                scheduler.step()
-            model.zero_grad()
-            total_loss += loss.item()
-            if (step + 1) % log_interval == 0:
-                pbar.set_postfix(loss=total_loss/log_interval)
-                total_loss = 0
-            if args.use_tb:
-                tb_writer.add_scalar("loss", loss.item(), global_step)
-            global_step += 1
+def save_model(model, dataset, args):
     if args.encoder != "bert":
         model_path = os.path.join(args.save_dir, "encoder_model.pt")
         torch.save(model, model_path)
@@ -122,6 +95,49 @@ def train():
                 "max_length": args.max_len, "pooling": args.pooling,
                 "dimension": args.emb_dims if args.encoder != "bert" else 768}
         json.dump(args, fo)
+
+
+def train():
+    parser = setup_argparser()
+    args = parser.parse_args()
+    model, dataset = setup_model_and_dataset(args)
+    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
+    optimizer, scheduler = setup_optimizer(model, dataset, args)
+
+    if args.use_tb:
+        tb_writer = SummaryWriter()
+
+    global_step = 0
+    log_interval = 50
+    device = args.device
+    for _ in trange(args.epochs, desc="Epoch"):
+        total_loss = 0
+        pbar = tqdm(data_loader, desc="Interation")
+        for step, batch in enumerate(pbar):
+            if args.encoder != "bert":
+                batch = [item.to(device) for item in batch]
+            else:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                sentences1 = {k.replace("sent1_", ""): v for k, v in batch.items() if k.startswith("sent1_")}
+                sentences2 = {k.replace("sent2_", ""): v for k, v in batch.items() if k.startswith("sent2_")}
+                sentences2 = sentences2 or None
+                negatives = {k.replace("neg_", ""): v for k, v in batch.items() if k.startswith("neg_")}
+                negatives = negatives or None
+                batch = [sentences1, sentences2, negatives]
+            loss = model(*batch)
+            loss.backward()
+            optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
+            model.zero_grad()
+            total_loss += loss.item()
+            if (step + 1) % log_interval == 0:
+                pbar.set_postfix(loss=total_loss/log_interval)
+                total_loss = 0
+            if args.use_tb:
+                tb_writer.add_scalar("loss", loss.item(), global_step)
+            global_step += 1
+    save_model(model, dataset, args)
 
 
 if __name__ == "__main__":
