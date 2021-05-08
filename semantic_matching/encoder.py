@@ -106,14 +106,14 @@ class LstmEncoder(SentenceEncoder):
         elif pooling == "full_connection":
             self.pool = nn.Linear(seq_len*emb_dims, emb_dims)
     
-    def init_hidden(self, batch_size):
-        return (torch.randn(2, batch_size, self.emb_dims // 2),
-                torch.randn(2, batch_size, self.emb_dims // 2))
+    def init_hidden(self, batch_size, device):
+        return (torch.randn(2, batch_size, self.emb_dims // 2, device=device),
+                torch.randn(2, batch_size, self.emb_dims // 2, device=device))
     
     def enocde_sentences(self, sentences):
         embeded = self.drouput(self.embedding(sentences))
         batch_size = sentences.shape[0]
-        hidden = self.init_hidden(batch_size)
+        hidden = self.init_hidden(batch_size, sentences.device)
         lstm_out, hidden = self.lstm(embeded, hidden)
         if self.pooling == "mean":
             encodings = lstm_out.mean(dim=1)
@@ -179,7 +179,8 @@ class TransformerEncoder(SentenceEncoder):
 
     def enocde_sentences(self, sentences):
         embedded = self.dropout(self.embedding(sentences))
-        encoded = self.transformer(embedded)
+        encoded = self.transformer(embedded.permute(1, 0, 2))
+        encoded = encoded.permute(1, 0, 2)
         if self.pooling == "mean":
             encodings = encoded.mean(dim=1)
         elif self.pooling == "attention":
@@ -230,22 +231,22 @@ class BertEncoder(SentenceEncoder):
 
 
 if __name__ == "__main__":
-    model = SiameseCbowEncoder(20, 30, 4, pooling="full_connection")
+    # model = SiameseCbowEncoder(20, 30, 4, pooling="full_connection")
     # model = MultiheadAttentionEncoder(20, 30, 5, 4, pooling="full_connection")
-    # model = TransformerEncoder(20, 30, 5, 4, num_layers=2, pooling="full_connection")
-    # sents1 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
-    # sents2 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
+    model = TransformerEncoder(20, 100, 5, 4, num_layers=2, pooling="mean")
+    sents1 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
+    sents2 = torch.tensor([[1, 2, 4, 0], [2, 3, 4, 1]], dtype=torch.long)
     # negatives =  torch.tensor([[[1, 2, 4, 0], [2, 3, 4, 1]], [[1, 2, 4, 0], [2, 3, 4, 1]]], dtype=torch.long)
-    # print(model(sents1, sents2, negatives=negatives))
+    print(model(sents1, sents2))
 
     # sents2 = torch.tensor([[[1, 2, 4, 0], [2, 3, 4, 1]], [[1, 2, 4, 1], [2, 3, 4, 1]]], dtype=torch.long)
     # labels = torch.tensor([[1, 0], [0, 1]], dtype=torch.float)
     # print(model(sents1, sents2, labels))
     
-    model= BertEncoder("C:/code/models/chinese_base", pooling="cls")
-    sentences1 = model.tokenizer(["你好吗", "你好美"], return_tensors="pt")
-    sentences2 = model.tokenizer(["你好呀", "你很美"], return_tensors="pt")
-    negatives = model.tokenizer(["你很烦", "你很丑"], return_tensors="pt")
-    labels = torch.tensor([0, 1], dtype=torch.float)
-    print(model(sentences1, sentences2, negatives))
-    print(model(sentences1))
+    # model= BertEncoder("C:/code/models/chinese_base", pooling="cls")
+    # sentences1 = model.tokenizer(["你好吗", "你好美"], return_tensors="pt")
+    # sentences2 = model.tokenizer(["你好呀", "你很美"], return_tensors="pt")
+    # negatives = model.tokenizer(["你很烦", "你很丑"], return_tensors="pt")
+    # labels = torch.tensor([0, 1], dtype=torch.float)
+    # print(model(sentences1, sentences2, negatives))
+    # print(model(sentences1))
