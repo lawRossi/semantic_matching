@@ -69,6 +69,7 @@ class SiameseCbowEncoder(SentenceEncoder):
     def __init__(self, vocab_size, emb_dims, seq_len, temperature=0.05, embedding_weights=None, 
             pooling="mean", attention_hidden_dims=100):
         super().__init__(temperature)
+        self.emb_dims = emb_dims
         if embedding_weights is None:
             self.embedding = nn.Embedding(vocab_size, emb_dims, padding_idx=0)
             self._init_embedding_weights()
