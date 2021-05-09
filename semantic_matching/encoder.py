@@ -9,6 +9,10 @@ class SentenceEncoder(nn.Module):
         super().__init__()
         self.temperature = temperature
         self.loss = nn.CrossEntropyLoss()
+    
+    def _init_embedding_weights(self):
+        init_range = 0.5 / self.emb_dims
+        self.embedding.weight.data.uniform_(-init_range, init_range)
 
     def forward(self, sentences1, sentences2, negatives=None, labels=None):
         in_batch_negative = labels is None
@@ -67,6 +71,7 @@ class SiameseCbowEncoder(SentenceEncoder):
         super().__init__(temperature)
         if embedding_weights is None:
             self.embedding = nn.Embedding(vocab_size, emb_dims, padding_idx=0)
+            self._init_embedding_weights()
         else:
             weights = torch.tensor(embedding_weights, dtype=torch.float)
             self.embedding = nn.Embedding.from_pretrained(weights, freeze=False, padding_idx=0)
@@ -95,6 +100,7 @@ class LstmEncoder(SentenceEncoder):
         self.emb_dims = emb_dims
         if embedding_weights is None:
             self.embedding = nn.Embedding(vocab_size, emb_dims, padding_idx=0)
+            self._init_embedding_weights()
         else:
             weights = torch.tensor(embedding_weights, dtype=torch.float)
             self.embedding = nn.Embedding.from_pretrained(weights, freeze=False, padding_idx=0)
@@ -132,6 +138,7 @@ class MultiheadAttentionEncoder(SentenceEncoder):
         self.emb_dims = emb_dims
         if embedding_weights is None:
             self.embedding = nn.Embedding(vocab_size, emb_dims, padding_idx=0)
+            self._init_embedding_weights()
         else:
             weights = torch.tensor(embedding_weights, dtype=torch.float)
             self.embedding = nn.Embedding.from_pretrained(weights, freeze=False, padding_idx=0)
@@ -165,6 +172,7 @@ class TransformerEncoder(SentenceEncoder):
         self.emb_dims = emb_dims
         if embedding_weights is None:
             self.embedding = nn.Embedding(vocab_size, emb_dims, padding_idx=0)
+            self._init_embedding_weights()
         else:
             weights = torch.tensor(embedding_weights, dtype=torch.float)
             self.embedding = nn.Embedding.from_pretrained(weights, freeze=False, padding_idx=0)
