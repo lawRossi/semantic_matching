@@ -1,4 +1,3 @@
-from elasticsearch import Elasticsearch
 import annoy
 import os
 import faiss
@@ -169,5 +168,6 @@ class FaissIndex(DocumentIndex):
     def load_index(self):
         index_file = os.path.join(self.index_dir, "index.faiss")
         self.index = faiss.read_index(index_file)
+        self.index.nprob = self.nprob
         with open(os.path.join(self.index_dir, "document_ids.json")) as fi:
             self.document_ids = json.load(fi)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModel, AutoTokenizer
-from torch.nn.functional import normalize
+import torch.nn.functional as F
 
 
 class SentenceEncoder(nn.Module):
@@ -16,11 +16,9 @@ class SentenceEncoder(nn.Module):
 
     def forward(self, sentences1, sentences2, negatives=None, labels=None):
         in_batch_negative = labels is None
-        sent1_emb = self.enocde_sentences(sentences1)
-        sent1_emb = normalize(sent1_emb, p=2, dim=1)
+        sent1_emb = self.enocde_sentences(sentences1, True)
         if in_batch_negative:
-            sent2_emb = self.enocde_sentences(sentences2)
-            sent2_emb = normalize(sent2_emb, p=2, dim=1)
+            sent2_emb = self.enocde_sentences(sentences2, True)
             logits = torch.mm(sent1_emb, sent2_emb.permute(1, 0))
             if negatives is not None:
                 neg_emb = self._encode_multiple_sentences(negatives)
@@ -36,14 +34,14 @@ class SentenceEncoder(nn.Module):
             logits = torch.bmm(sent1_emb, sent2_emb.permute(0, 2, 1)).squeeze(1)
         return self.loss(logits, labels)
 
-    def enocde_sentences(self, sentences):
+    def enocde_sentences(self, sentences, normalize=False):
         pass
 
     def _encode_multiple_sentences(self, sentences):
         batch_size, num_sents, seq_len = sentences.shape
         sentences = sentences.view(-1, seq_len)
         sent_emb = self.enocde_sentences(sentences)
-        sent_emb = normalize(sent_emb, p=2, dim=1)
+        sent_emb = F.normalize(sent_emb, p=2, dim=1)
         sent_emb = sent_emb.view(batch_size, num_sents, -1)
         return sent_emb
 
@@ -82,7 +80,7 @@ class SiameseCbowEncoder(SentenceEncoder):
         elif pooling == "full_connection":
             self.pool = nn.Linear(seq_len*emb_dims, emb_dims)
 
-    def enocde_sentences(self, sentences):
+    def enocde_sentences(self, sentences, normalize=False):
         embedded = self.embedding(sentences)
         if self.pooling == "mean":
             encodings = embedded.mean(dim=1)
@@ -91,6 +89,8 @@ class SiameseCbowEncoder(SentenceEncoder):
         else:
             batch_size = sentences.shape[0]
             encodings = self.pool(embedded.reshape(batch_size, -1))
+        if normalize:
+            encodings = F.normalize(encodings)
         return encodings
 
 
@@ -117,7 +117,7 @@ class LstmEncoder(SentenceEncoder):
         return (torch.randn(2, batch_size, self.emb_dims // 2, device=device),
                 torch.randn(2, batch_size, self.emb_dims // 2, device=device))
     
-    def enocde_sentences(self, sentences):
+    def enocde_sentences(self, sentences, normalize=False):
         embeded = self.drouput(self.embedding(sentences))
         batch_size = sentences.shape[0]
         hidden = self.init_hidden(batch_size, sentences.device)
@@ -129,6 +129,8 @@ class LstmEncoder(SentenceEncoder):
         else:
             batch_size = sentences.shape[0]
             encodings = self.pool(lstm_out.reshape(batch_size, -1))
+        if normalize:
+            encodings = F.normalize(encodings)
         return encodings
 
 
@@ -151,7 +153,7 @@ class MultiheadAttentionEncoder(SentenceEncoder):
             self.pool = nn.Linear(seq_len*emb_dims, emb_dims)
         self.dropout = nn.Dropout(dropout)
 
-    def enocde_sentences(self, sentences):
+    def enocde_sentences(self, sentences, normalize=False):
         embedded = self.dropout(self.embedding(sentences))
         permuted = embedded.permute(1, 0, 2)
         attended, _ = self.mha(permuted, permuted, permuted)
@@ -163,6 +165,8 @@ class MultiheadAttentionEncoder(SentenceEncoder):
         else:
             batch_size = sentences.shape[0]
             encodings = self.pool(attended.reshape(batch_size, -1))
+        if normalize:
+            encodings = F.normalize(encodings)
         return encodings
 
 
@@ -186,7 +190,7 @@ class TransformerEncoder(SentenceEncoder):
             self.pool = nn.Linear(seq_len*emb_dims, emb_dims)
         self.dropout = nn.Dropout(dropout)
 
-    def enocde_sentences(self, sentences):
+    def enocde_sentences(self, sentences, normalize=False):
         embedded = self.dropout(self.embedding(sentences))
         encoded = self.transformer(embedded.permute(1, 0, 2))
         encoded = encoded.permute(1, 0, 2)
@@ -197,6 +201,8 @@ class TransformerEncoder(SentenceEncoder):
         else:
             batch_size = sentences.shape[0]
             encodings = self.pool(encoded.reshape(batch_size, -1))
+        if normalize:
+            encodings = F.normalize(encodings)
         return encodings
 
 
@@ -209,34 +215,34 @@ class BertEncoder(SentenceEncoder):
 
     def forward(self, sentences1, sentences2=None, negatives=None, labels=None):
         in_batch_negative = labels is None
-        sent1_emb = self.enocde_sentences(sentences1)
+        sent1_emb = self.enocde_sentences(sentences1, True)
         cse = sentences2 is None  # Contrastive learning
-        sent1_emb = normalize(sent1_emb, p=2, dim=1)
         if in_batch_negative:
             if cse:
                 sentences2 = sentences1
-            sent2_emb = self.enocde_sentences(sentences2)
-            sent2_emb = normalize(sent2_emb, p=2, dim=1)
+            sent2_emb = self.enocde_sentences(sentences2, True)
             logits = torch.mm(sent1_emb, sent2_emb.permute(1, 0))
             if negatives:
-                neg_emb = self.enocde_sentences(negatives)
+                neg_emb = self.enocde_sentences(negatives, True)
                 logits_ = torch.mul(sent1_emb, neg_emb).sum(dim=1, keepdim=True)
                 logits = torch.cat([logits, logits_], dim=1)
             logits /= self.temperature
             batch_size = logits.shape[0]
             labels = torch.arange(0, batch_size, device=logits.device)
         else:
-            sent2_emb = self.enocde_sentences(sentences2)
-            sent2_emb = normalize(sent2_emb, p=2, dim=1)
+            sent2_emb = self.enocde_sentences(sentences2, True)
             logits = torch.mul(sent1_emb, sent2_emb).sum(dim=1)
         return self.loss(logits, labels)
 
-    def enocde_sentences(self, sentences):
+    def enocde_sentences(self, sentences, normalize=False):
         output = self.bert_model(**sentences)
         if self.pooling == "mean":
-            return output.last_hidden_state.mean(dim=1)
+            encoding = output.last_hidden_state.mean(dim=1)
         elif self.pooling == "cls":
-            return output.last_hidden_state[:, 0]
+            encoding = output.last_hidden_state[:, 0]
+        if normalize:
+            encoding = F.normalize(encoding, p=2, dim=1)
+        return encoding
 
 
 if __name__ == "__main__":
