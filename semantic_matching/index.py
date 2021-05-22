@@ -11,7 +11,7 @@ class DocumentIndex:
     def load_index(self):
         pass
 
-    def retrieve(self, query, max_num):
+    def retrieve(self, query, max_num, threshold=0):
         pass
 
     def add_documents(self, documents):
@@ -47,7 +47,7 @@ class ESIndex(DocumentIndex):
             es.indices.put_settings(setting, index=self.es_index)
             es.indices.open(self.es_index)
 
-    def retrieve(self, query, max_num):
+    def retrieve(self, query, max_num, threshold=0):
         res = self.es.search({"query": {"match": {"index_text": query}}}, index=self.es_index, size=max_num)
         retrieved_documents = [hit["_source"] for hit in res["hits"]["hits"]]
         return retrieved_documents
@@ -91,13 +91,14 @@ class AnnoyIndex(DocumentIndex):
     def add_documents(self, documents):
         raise NotImplementedError
 
-    def retrieve(self, query, max_num):
+    def retrieve(self, query, max_num, threshold=0):
         query_encoding = self.encoder.encode_sentences([query])[0]
-        return self.retrieve_by_encoding(query_encoding, max_num)
+        return self.retrieve_by_encoding(query_encoding, max_num, threshold)
 
-    def retrieve_by_encoding(self, encoding, max_num):
+    def retrieve_by_encoding(self, encoding, max_num, threshold=0):
+        idxes, distances = self.annoy_index.get_nns_by_vector(encoding, max_num, include_distances=True)
         retrieved_ids = [
-            self.document_ids[idx] for idx in self.annoy_index.get_nns_by_vector(encoding, max_num)
+            self.document_ids[idx] for idx, disntance in zip(idxes, distances) if 1 - disntance >= threshold
         ]
         return retrieved_ids
 
@@ -143,7 +144,7 @@ class FaissIndex(DocumentIndex):
         self.document_ids = [document["id"] for document in documents]
         self._save_index()
 
-    def retrieve(self, query, max_num):
+    def retrieve(self, query, max_num, threshold=0):
         query_vec = self.encoder.encode_sentences([query])
         if self.metric == "cosine":
             faiss.normalize_L2(query_vec)
