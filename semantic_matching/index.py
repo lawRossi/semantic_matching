@@ -17,44 +17,6 @@ class DocumentIndex:
     def add_documents(self, documents):
         raise NotImplementedError
 
-    def get_document_by_ids(self, document_ids):
-        raise NotImplementedError
-
-
-class ESIndex(DocumentIndex):
-    def __init__(self, es, es_index="document"):
-        self. es = es
-        self.es_index = es_index
-
-    def build_index(self, documents):
-        self._check_index()
-        for document in documents:
-            self.es.index(self.es_index, document)
-
-    def add_documents(self, documents):
-        for document in documents:
-            self.es.index(self.es_index, document)
-
-    def _check_index(self):
-        es = self.es
-        if not es.indices.exists(self.es_index):
-            es.indices.create(self.es_index)
-            es.indices.close(self.es_index)
-            setting = {
-                "index.analysis.analyzer.default.type": "ik_max_word",
-                "index.analysis.search_analyzer.default.type": "ik_samrt"
-            }
-            es.indices.put_settings(setting, index=self.es_index)
-            es.indices.open(self.es_index)
-
-    def retrieve(self, query, max_num, threshold=0):
-        res = self.es.search({"query": {"match": {"index_text": query}}}, index=self.es_index, size=max_num)
-        retrieved_documents = [hit["_source"] for hit in res["hits"]["hits"]]
-        return retrieved_documents
-    
-    def get_document_by_ids(self, document_ids):
-        pass
-
 
 class AnnoyIndex(DocumentIndex):
     def __init__(self, encoder, index_dir="index", num_trees=50, metric="angular"):
@@ -91,16 +53,20 @@ class AnnoyIndex(DocumentIndex):
     def add_documents(self, documents):
         raise NotImplementedError
 
-    def retrieve(self, query, max_num, threshold=0):
+    def retrieve(self, query, max_num, threshold=0, include_similarity=False):
         query_encoding = self.encoder.encode_sentences([query])[0]
-        return self.retrieve_by_encoding(query_encoding, max_num, threshold)
+        return self.retrieve_by_encoding(query_encoding, max_num, threshold, include_similarity)
 
-    def retrieve_by_encoding(self, encoding, max_num, threshold=0):
+    def retrieve_by_encoding(self, encoding, max_num, threshold=0, include_similarity=False):
         idxes, distances = self.annoy_index.get_nns_by_vector(encoding, max_num, include_distances=True)
         retrieved_ids = [
             self.document_ids[idx] for idx, disntance in zip(idxes, distances) if 1 - disntance >= threshold
         ]
-        return retrieved_ids
+        if not include_similarity:
+            return retrieved_ids
+        else:
+            similarities = [1 - distance for distance in distances if distance >= threshold]
+            return retrieved_ids, similarities
 
     def _save_annoy_index(self):
         save_dir = self.index_dir
